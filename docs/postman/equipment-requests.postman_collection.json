@@ -1,0 +1,612 @@
+{
+  "info": {
+    "name": "Task 2 — Equipment & Requests API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "equipmentId", "value": "" },
+    { "key": "requestId", "value": "" },
+    { "key": "serialNumber", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "1. Health",
+      "item": [
+        {
+          "name": "GET /api/health",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/health", "host": ["{{baseUrl}}"], "path": ["api", "health"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('status 200', () => pm.response.to.have.status(200));",
+                "const j = pm.response.json();",
+                "pm.test('status is ok', () => pm.expect(j.status).to.eql('ok'));",
+                "pm.test('has uptime', () => pm.expect(j).to.have.property('uptime'));",
+                "pm.test('has timestamp', () => pm.expect(j).to.have.property('timestamp'));"
+              ]
+            }
+          }]
+        }
+      ]
+    },
+    {
+      "name": "2. Equipment",
+      "item": [
+        {
+          "name": "POST create equipment (201)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Turbine Alpha\",\n  \"type\": \"turbine\",\n  \"serialNumber\": \"WT-UNIQUE-001\",\n  \"location\": { \"lat\": 55.75, \"lon\": 37.62 },\n  \"status\": \"operational\",\n  \"installedAt\": \"2023-05-12T10:00:00.000Z\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/equipment", "host": ["{{baseUrl}}"], "path": ["api", "equipment"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('status 201', () => pm.response.to.have.status(201));",
+                "const j = pm.response.json();",
+                "pm.test('has data.id', () => pm.expect(j.data).to.have.property('id'));",
+                "pm.test('id is uuid', () => pm.expect(j.data.id).to.match(/^[0-9a-f-]{36}$/i));",
+                "pm.test('has Location header', () => pm.expect(pm.response.headers.get('Location')).to.include('/api/equipment/'));",
+                "pm.test('has createdAt', () => pm.expect(j.data).to.have.property('createdAt'));",
+                "pm.test('has updatedAt', () => pm.expect(j.data).to.have.property('updatedAt'));",
+                "pm.test('serialNumber matches', () => pm.expect(j.data.serialNumber).to.eql('WT-UNIQUE-001'));",
+                "",
+                "pm.environment.set('equipmentId', j.data.id);",
+                "pm.environment.set('serialNumber', j.data.serialNumber);"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "POST duplicate serialNumber (409)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Duplicate\",\n  \"type\": \"turbine\",\n  \"serialNumber\": \"{{serialNumber}}\",\n  \"location\": { \"lat\": 55.75, \"lon\": 37.62 },\n  \"status\": \"operational\",\n  \"installedAt\": \"2023-05-12T10:00:00.000Z\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/equipment", "host": ["{{baseUrl}}"], "path": ["api", "equipment"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('status 409', () => pm.response.to.have.status(409));",
+                "const j = pm.response.json();",
+                "pm.test('code is CONFLICT', () => pm.expect(j.error.code).to.eql('CONFLICT'));",
+                "pm.test('has requestId', () => pm.expect(j.error).to.have.property('requestId'));"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "POST invalid body (422)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"X\",\n  \"type\": \"rocket\",\n  \"serialNumber\": \"\",\n  \"location\": { \"lat\": 999, \"lon\": 999 },\n  \"status\": \"unknown\",\n  \"installedAt\": \"2999-01-01T00:00:00.000Z\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/equipment", "host": ["{{baseUrl}}"], "path": ["api", "equipment"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('status 422', () => pm.response.to.have.status(422));",
+                "const j = pm.response.json();",
+                "pm.test('code is VALIDATION_ERROR', () => pm.expect(j.error.code).to.eql('VALIDATION_ERROR'));",
+                "pm.test('details is array', () => pm.expect(j.error.details).to.be.an('array'));",
+                "pm.test('details not empty', () => pm.expect(j.error.details.length).to.be.above(0));",
+                "pm.test('each detail has field & message', () => {",
+                "  j.error.details.forEach(d => {",
+                "    pm.expect(d).to.have.property('field');",
+                "    pm.expect(d).to.have.property('message');",
+                "  });",
+                "});"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "GET list with filters + pagination (200)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/equipment?type=turbine&status=operational&page=1&limit=5&sortBy=name&order=asc",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "equipment"],
+              "query": [
+                {"key":"type","value":"turbine"},
+                {"key":"status","value":"operational"},
+                {"key":"page","value":"1"},
+                {"key":"limit","value":"5"},
+                {"key":"sortBy","value":"name"},
+                {"key":"order","value":"asc"}
+              ]
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('status 200', () => pm.response.to.have.status(200));",
+                "const j = pm.response.json();",
+                "pm.test('data is array', () => pm.expect(j.data).to.be.an('array'));",
+                "pm.test('meta.total exists', () => pm.expect(j.meta).to.have.property('total'));",
+                "pm.test('meta.page is 1', () => pm.expect(j.meta.page).to.eql(1));",
+                "pm.test('meta.limit is 5', () => pm.expect(j.meta.limit).to.eql(5));"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "GET list invalid query (422)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/equipment?limit=99999&page=abc&type=rocket",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "equipment"],
+              "query": [
+                {"key":"limit","value":"99999"},
+                {"key":"page","value":"abc"},
+                {"key":"type","value":"rocket"}
+              ]
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('status 422', () => pm.response.to.have.status(422));",
+                "const j = pm.response.json();",
+                "pm.test('details not empty', () => pm.expect(j.error.details.length).to.be.above(0));"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "GET equipment by id (200)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/equipment/{{equipmentId}}", "host": ["{{baseUrl}}"], "path": ["api", "equipment", "{{equipmentId}}"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('status 200', () => pm.response.to.have.status(200));",
+                "const j = pm.response.json();",
+                "pm.test('data.id matches', () => pm.expect(j.data.id).to.eql(pm.environment.get('equipmentId')));"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "GET equipment invalid uuid (422)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/equipment/not-a-uuid", "host": ["{{baseUrl}}"], "path": ["api", "equipment", "not-a-uuid"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('status 422', () => pm.response.to.have.status(422));",
+                "const j = pm.response.json();",
+                "pm.test('code is VALIDATION_ERROR', () => pm.expect(j.error.code).to.eql('VALIDATION_ERROR'));"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "GET equipment not found (404)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/equipment/00000000-0000-0000-0000-000000000000", "host": ["{{baseUrl}}"], "path": ["api", "equipment", "00000000-0000-0000-0000-000000000000"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('status 404', () => pm.response.to.have.status(404));",
+                "const j = pm.response.json();",
+                "pm.test('code is NOT_FOUND', () => pm.expect(j.error.code).to.eql('NOT_FOUND'));"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "PATCH equipment valid (200)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Turbine Updated\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/equipment/{{equipmentId}}", "host": ["{{baseUrl}}"], "path": ["api", "equipment", "{{equipmentId}}"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('status 200', () => pm.response.to.have.status(200));",
+                "const j = pm.response.json();",
+                "pm.test('name changed', () => pm.expect(j.data.name).to.eql('Turbine Updated'));",
+                "pm.test('id unchanged', () => pm.expect(j.data.id).to.eql(pm.environment.get('equipmentId')));",
+                "pm.test('createdAt not 2020', () => pm.expect(j.data.createdAt).to.not.include('2020'));",
+                "pm.test('updatedAt >= createdAt', () => pm.expect(j.data.updatedAt >= j.data.createdAt).to.be.true);"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "PATCH equipment forbidden fields (422)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Try Hack\",\n  \"id\": \"hacked-id\",\n  \"createdAt\": \"2020-01-01T00:00:00.000Z\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/equipment/{{equipmentId}}", "host": ["{{baseUrl}}"], "path": ["api", "equipment", "{{equipmentId}}"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('status 422', () => pm.response.to.have.status(422));",
+                "const j = pm.response.json();",
+                "pm.test('code is VALIDATION_ERROR', () => pm.expect(j.error.code).to.eql('VALIDATION_ERROR'));",
+                "pm.test('details includes id or createdAt', () => {",
+                "  const fields = j.error.details.map(d => d.field);",
+                "  pm.expect(fields).to.include.oneOf(['id', 'createdAt']);",
+                "});"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "GET equipment requests (nested, 200)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/equipment/{{equipmentId}}/requests", "host": ["{{baseUrl}}"], "path": ["api", "equipment", "{{equipmentId}}", "requests"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('status 200', () => pm.response.to.have.status(200));",
+                "const j = pm.response.json();",
+                "pm.test('data is array', () => pm.expect(j.data).to.be.an('array'));",
+                "pm.test('meta has total', () => pm.expect(j.meta).to.have.property('total'));"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "GET equipment weather (200 or 502)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/equipment/{{equipmentId}}/weather", "host": ["{{baseUrl}}"], "path": ["api", "equipment", "{{equipmentId}}", "weather"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('status 200 or 502', () => pm.expect([200, 502]).to.include(pm.response.code));",
+                "if (pm.response.code === 200) {",
+                "  const j = pm.response.json();",
+                "  pm.test('has forecast', () => pm.expect(j.data).to.have.property('forecast'));",
+                "  pm.test('has suitable', () => pm.expect(j.data).to.have.property('suitable'));",
+                "} else {",
+                "  const j = pm.response.json();",
+                "  pm.test('error is EXTERNAL_SERVICE_ERROR', () => pm.expect(j.error.code).to.eql('EXTERNAL_SERVICE_ERROR'));",
+                "}"
+              ]
+            }
+          }]
+        }
+      ]
+    },
+    {
+      "name": "3. Requests",
+      "item": [
+        {
+          "name": "POST create request (201)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"equipmentId\": \"{{equipmentId}}\",\n  \"title\": \"Плановое ТО\",\n  \"description\": \"Заменить подшипник\",\n  \"priority\": \"high\",\n  \"plannedAt\": \"2026-10-01T10:00:00.000Z\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/requests", "host": ["{{baseUrl}}"], "path": ["api", "requests"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('status 201', () => pm.response.to.have.status(201));",
+                "const j = pm.response.json();",
+                "pm.test('has data.id', () => pm.expect(j.data).to.have.property('id'));",
+                "pm.test('status is new', () => pm.expect(j.data.status).to.eql('new'));",
+                "pm.test('has createdAt', () => pm.expect(j.data).to.have.property('createdAt'));",
+                "pm.environment.set('requestId', j.data.id);"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "POST request missing equipment (404)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"equipmentId\": \"00000000-0000-0000-0000-000000000000\",\n  \"title\": \"Test missing equipment\",\n  \"priority\": \"low\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/requests", "host": ["{{baseUrl}}"], "path": ["api", "requests"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('status 404', () => pm.response.to.have.status(404));",
+                "const j = pm.response.json();",
+                "pm.test('code is NOT_FOUND', () => pm.expect(j.error.code).to.eql('NOT_FOUND'));"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "POST request invalid body (422)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"equipmentId\": \"not-a-uuid\",\n  \"title\": \"ab\",\n  \"priority\": \"banana\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/requests", "host": ["{{baseUrl}}"], "path": ["api", "requests"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('status 422', () => pm.response.to.have.status(422));",
+                "const j = pm.response.json();",
+                "pm.test('details not empty', () => pm.expect(j.error.details.length).to.be.above(0));"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "GET list requests (filters + pagination, 200)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/requests?status=new&priority=high&page=1&limit=10&sortBy=createdAt&order=desc",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "requests"],
+              "query": [
+                {"key":"status","value":"new"},
+                {"key":"priority","value":"high"},
+                {"key":"page","value":"1"},
+                {"key":"limit","value":"10"}
+              ]
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('status 200', () => pm.response.to.have.status(200));",
+                "const j = pm.response.json();",
+                "pm.test('data is array', () => pm.expect(j.data).to.be.an('array'));",
+                "pm.test('meta.total exists', () => pm.expect(j.meta).to.have.property('total'));",
+                "pm.test('meta.page is 1', () => pm.expect(j.meta.page).to.eql(1));",
+                "pm.test('meta.limit is 10', () => pm.expect(j.meta.limit).to.eql(10));"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "GET request by id (200)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/requests/{{requestId}}", "host": ["{{baseUrl}}"], "path": ["api", "requests", "{{requestId}}"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('status 200', () => pm.response.to.have.status(200));",
+                "const j = pm.response.json();",
+                "pm.test('data.id matches', () => pm.expect(j.data.id).to.eql(pm.environment.get('requestId')));"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "PATCH request fields (200)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Обновлённый заголовок\",\n  \"priority\": \"critical\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/requests/{{requestId}}", "host": ["{{baseUrl}}"], "path": ["api", "requests", "{{requestId}}"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('status 200', () => pm.response.to.have.status(200));",
+                "const j = pm.response.json();",
+                "pm.test('title updated', () => pm.expect(j.data.title).to.eql('Обновлённый заголовок'));",
+                "pm.test('priority updated', () => pm.expect(j.data.priority).to.eql('critical'));"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "PATCH status new -> in_progress (200)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{ \"status\": \"in_progress\" }" },
+            "url": { "raw": "{{baseUrl}}/api/requests/{{requestId}}/status", "host": ["{{baseUrl}}"], "path": ["api", "requests", "{{requestId}}", "status"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('status 200', () => pm.response.to.have.status(200));",
+                "const j = pm.response.json();",
+                "pm.test('status is in_progress', () => pm.expect(j.data.status).to.eql('in_progress'));"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "PATCH status in_progress -> done (200)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{ \"status\": \"done\" }" },
+            "url": { "raw": "{{baseUrl}}/api/requests/{{requestId}}/status", "host": ["{{baseUrl}}"], "path": ["api", "requests", "{{requestId}}", "status"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('status 200', () => pm.response.to.have.status(200));",
+                "const j = pm.response.json();",
+                "pm.test('status is done', () => pm.expect(j.data.status).to.eql('done'));"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "PATCH invalid transition done -> in_progress (409)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{ \"status\": \"in_progress\" }" },
+            "url": { "raw": "{{baseUrl}}/api/requests/{{requestId}}/status", "host": ["{{baseUrl}}"], "path": ["api", "requests", "{{requestId}}", "status"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('status 409', () => pm.response.to.have.status(409));",
+                "const j = pm.response.json();",
+                "pm.test('code is CONFLICT', () => pm.expect(j.error.code).to.eql('CONFLICT'));",
+                "pm.test('has requestId', () => pm.expect(j.error).to.have.property('requestId'));"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "PATCH invalid status value (422)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{ \"status\": \"banana\" }" },
+            "url": { "raw": "{{baseUrl}}/api/requests/{{requestId}}/status", "host": ["{{baseUrl}}"], "path": ["api", "requests", "{{requestId}}", "status"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('status 422', () => pm.response.to.have.status(422));",
+                "const j = pm.response.json();",
+                "pm.test('code is VALIDATION_ERROR', () => pm.expect(j.error.code).to.eql('VALIDATION_ERROR'));"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "DELETE request (204)",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{baseUrl}}/api/requests/{{requestId}}", "host": ["{{baseUrl}}"], "path": ["api", "requests", "{{requestId}}"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('status 204', () => pm.response.to.have.status(204));",
+                "pm.test('body is empty', () => pm.expect(pm.response.text()).to.eql(''));"
+              ]
+            }
+          }]
+        }
+      ]
+    },
+    {
+      "name": "4. Common",
+      "item": [
+        {
+          "name": "GET unknown route (404)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/unknown", "host": ["{{baseUrl}}"], "path": ["api", "unknown"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('status 404', () => pm.response.to.have.status(404));",
+                "const j = pm.response.json();",
+                "pm.test('code is NOT_FOUND', () => pm.expect(j.error.code).to.eql('NOT_FOUND'));",
+                "pm.test('has requestId', () => pm.expect(j.error).to.have.property('requestId'));"
+              ]
+            }
+          }]
+        }
+      ]
+    }
+  ]
+}
