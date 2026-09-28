@@ -3,8 +3,8 @@ const { ExternalServiceError } =require( '../errors/errors')
 class WeatherService {
   async getForecast(location) {
     const url = new URL(process.env.WEATHER_API_URL);
-    url.searchParams.set('lat', location.lat);
-    url.searchParams.set('lon', location.lon);
+    url.searchParams.set('latitude', location.lat);
+    url.searchParams.set('longitude', location.lon);
 
     const controller = new AbortController();
     const timeout = setTimeout(
