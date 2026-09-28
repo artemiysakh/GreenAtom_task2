@@ -10,7 +10,7 @@ class requestController{
     }
     async createRequest(req,res){
         const result = await requestService.create(req.valid.body)
-        return res.status(201)
+        return res.status(201).location(`/api/requests/${result.id}`).json({ data: result });
     }
     async getRequest(req,res){
         const result = await requestService.getById(req.valid.params.id)
@@ -34,6 +34,20 @@ class requestController{
         return res.json( {
             data: result
         })
+    }
+    async assign(req, res) {
+        const result = await requestService.assignTeam(req.valid.params.id, req.valid.body.assignees);
+        return res.json({ data: result });
+    }
+
+    async unassign(req, res) {
+        await requestService.unassignTechnician(req.valid.params.id, req.valid.params.userId);
+        return res.status(204).end();
+    }
+
+    async getHistory(req, res) {
+        const result = await requestService.getHistory(req.valid.params.id);
+        return res.json({ data: result });
     }
 }
 module.exports = new requestController()

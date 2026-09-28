@@ -1,6 +1,7 @@
+const z = require('zod');
+const { ValidationError,NotFoundError, ConflictError } = require('../errors/errors');
 const requestRepository =require( '../repositories/request.repository.js')
 const equipmentRepository =require( '../repositories/equipment.repository.js')
-const { NotFoundError, ConflictError }=require( '../errors/errors.js')
 
 const ALLOWED_TRANSITIONS = {
   new: ['in_progress', 'rejected'],
@@ -32,13 +33,13 @@ class RequestService {
   }
 
   async getById(id) {
-    const request = this.repo.findById(id);
+    const request = await this.repo.findById(id);
     if (!request) throw new NotFoundError('Заявка не найдена');
     return request;
   }
 
   async create(data) {
-    const equipment = this.equipmentRepo.findById(data.equipmentId);
+    const equipment = await this.equipmentRepo.findById(data.equipmentId);
     if (!equipment) throw new NotFoundError('Оборудование не найдено');
 
     return this.repo.create({
@@ -51,7 +52,7 @@ class RequestService {
   }
 
   async update(id, patch) {
-    const current = this.repo.findById(id);
+    const current = await this.repo.findById(id);
     if (!current) throw new NotFoundError('Заявка не найдена');
 
     const allowed = {};
@@ -63,8 +64,15 @@ class RequestService {
     return this.repo.update(id, allowed);
   }
 
-  async changeStatus(id, nextStatus) {
-    const current = this.repo.findById(id);
+ async changeStatus(id, nextStatus) {
+  const {
+    sequelize, MaintenanceRequest, RequestAssignee, RequestStatusHistory,
+  } = require('../models/index.js');
+
+  return sequelize.transaction(async (t) => {
+    const current = await MaintenanceRequest.findByPk(id, {
+      transaction: t, lock: t.LOCK.UPDATE,
+    });
     if (!current) throw new NotFoundError('Заявка не найдена');
 
     const allowed = ALLOWED_TRANSITIONS[current.status] ?? [];
@@ -74,14 +82,102 @@ class RequestService {
       );
     }
 
-    return this.repo.updateStatus(id, nextStatus);
-  }
+    if (nextStatus === 'in_progress') {
+      const count = await RequestAssignee.count({
+        where: { requestId: id },
+        transaction: t,
+      });
+      if (count === 0) {
+        throw new ConflictError('Нельзя начать работу без назначенных исполнителей');
+      }
+    }
+
+    const oldStatus = current.status;
+    await current.update({ status: nextStatus }, { transaction: t });
+
+    await RequestStatusHistory.create({
+      requestId: id,
+      oldStatus,
+      newStatus: nextStatus,
+      changedBy: 'system',
+      comment: null,
+    }, { transaction: t });
+
+    return current;
+  });
+}
 
   async remove(id) {
-    const current = this.repo.findById(id);
+    const current = await this.repo.findById(id);
     if (!current) throw new NotFoundError('Заявка не найдена');
 
     this.repo.remove(id);
+  }
+  async assignTeam(id, assignees) {
+    const { sequelize, MaintenanceRequest, RequestAssignee, Technician } = require('../models');
+    const leads = assignees.filter((a) => a.role === 'lead');
+    if (leads.length !== 1) {
+      throw new ValidationError(
+        new z.ZodError([
+          { code: 'custom', path: ['assignees'], message: 'Ровно один lead обязателен' },
+        ])
+      );
+    }
+
+    return sequelize.transaction(async (t) => {
+    const request = await MaintenanceRequest.findByPk(id, {
+      transaction: t,
+      lock: t.LOCK.UPDATE,
+    });
+    if (!request) throw new NotFoundError('Заявка');
+    const technicianIds = assignees.map((a) => a.technicianId);
+    const technicians = await Technician.findAll({
+      where: { id: technicianIds },
+      transaction: t,
+    });
+    if (technicians.length !== technicianIds.length) {
+      throw new NotFoundError('Специалист');
+    }
+    await RequestAssignee.destroy({
+      where: { requestId: id },
+      transaction: t,
+    });
+
+    await RequestAssignee.bulkCreate(
+      assignees.map((a) => ({
+        requestId: id,
+        technicianId: a.technicianId,
+        role: a.role,
+        hours: a.hours,
+      })),
+      { transaction: t }
+    );
+
+    return RequestAssignee.findAll({
+      where: { requestId: id },
+      include: [{ model: Technician, as: 'technician' }],
+      transaction: t,
+    });
+  });
+}
+  async unassignTechnician(id, userId) {
+    const { RequestAssignee } = require('../models');
+
+    const deleted = await RequestAssignee.destroy({
+      where: { requestId: id, technicianId: userId },
+    });
+    if (!deleted) throw new NotFoundError('Назначение');
+  }
+
+  async getHistory(id) {
+    const { MaintenanceRequest, RequestStatusHistory } = require('../models');
+    const request = await MaintenanceRequest.findByPk(id);
+    if (!request) throw new NotFoundError('Заявка');
+
+    return RequestStatusHistory.findAll({
+      where: { requestId: id },
+      order: [['changed_at', 'ASC']],
+    });
   }
 }
 

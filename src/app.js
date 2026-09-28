@@ -21,7 +21,7 @@ class App {
   origin: (process.env.CORS_ORIGINS || '').split(',').filter(Boolean),
 }));
         this.server.use(rateLimit({
-            windowMs: process.env.RATE_LIMIT_WINDOW_MS || 60000,
+            windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS || 60000),
             max: Number(process.env.RATE_LIMIT_MAX) || 100,
             standardHeaders: true,
             legacyHeaders: false,

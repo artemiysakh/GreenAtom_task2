@@ -1,68 +1,60 @@
-const {randomUUID} = require('node:crypto');
+const { Equipment, Site, EquipmentPassport, MaintenanceRequest } = require('../models/index');
 
-const items = new Map();
-const serialIndex = new Map();
+const ALLOWED_SORT = ['name', 'type', 'status', 'installedAt', 'createdAt'];
+const ALLOWED_ORDER = ['ASC', 'DESC'];
 
-function findAll({filter = {}, sort = { field: 'name', order: 'asc'}, page = 1, limit = 20 } = {}) {
-  let data = [...items.values()].filter((item) =>
-    Object.entries(filter).every(([k, v]) => v == null || item[k] === v)
-  );
+async function findAll({ filter = {}, sort = { field: 'name', order: 'asc' }, page = 1, limit = 20 } = {}) {
+  const where = {};
+  if (filter.type) where.type = filter.type;
+  if (filter.status) where.status = filter.status;
 
-  const dir = sort.order === 'desc' ? -1 : 1;
-  data.sort((a, b) => (a[sort.field] > b[sort.field] ? dir : -dir));
+  const field = ALLOWED_SORT.includes(sort.field) ? sort.field : 'name';
+  const dir = ALLOWED_ORDER.includes(String(sort.order).toUpperCase())
+    ? String(sort.order).toUpperCase()
+    : 'ASC';
 
-  const total = data.length;
-  const offset = (page - 1) * limit;
+  const { count, rows } = await Equipment.findAndCountAll({
+    where,
+    include: [
+      { model: Site, as: 'site', attributes: ['id', 'name', 'code', 'region'] },
+      { model: EquipmentPassport, as: 'passport' },
+    ],
+    order: [[field, dir]],
+    limit,
+    offset: (page - 1) * limit,
+  });
 
-  return { items: data.slice(offset, offset + limit), total, page, limit };
+  return { items: rows, total: count, page, limit };
 }
 
-function findById(id) {
-  return items.get(id) ?? null;
+async function findById(id) {
+  return Equipment.findByPk(id, {
+    include: [
+      { model: Site, as: 'site' },
+      { model: EquipmentPassport, as: 'passport' },
+    ],
+  });
 }
 
-function findBySerialNumber(serialNumber) {
-  const id = serialIndex.get(serialNumber);
-  return id ? items.get(id) ?? null : null;
+async function findBySerialNumber(serialNumber) {
+  return Equipment.findOne({ where: { serialNumber } });
 }
 
-function create(data) {
-  const id = randomUUID();
-  const now = new Date().toISOString();
-
-  const record = {
-    id,
-    name: data.name,
-    type: data.type,
-    serialNumber: data.serialNumber,
-    location: data.location,
-    status: data.status,
-    installedAt: data.installedAt,
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  items.set(id, record);
-  serialIndex.set(record.serialNumber, id);
-  return record;
+async function create(data) {
+  return Equipment.create(data);
 }
 
-function update(id, patch) {
-  const current = items.get(id);
-  if (!current) return null;
-
-  const updated = { ...current, ...patch, id, createdAt: current.createdAt, updatedAt: new Date().toISOString() };
-  items.set(id, updated);
-  return updated;
+async function update(id, patch) {
+  const eq = await Equipment.findByPk(id);
+  if (!eq) return null;
+  return eq.update(patch);
 }
 
-function remove(id) {
-  const current = items.get(id);
-  if (!current) return false;
-  items.delete(id);
-  serialIndex.delete(current.serialNumber);
+async function remove(id) {
+  const eq = await Equipment.findByPk(id);
+  if (!eq) return false;
+  await eq.destroy();
   return true;
 }
-module.exports = {
-  findAll, remove, update, create, findBySerialNumber,findById,  
-}
+
+module.exports = { findAll, findById, findBySerialNumber, create, update, remove };

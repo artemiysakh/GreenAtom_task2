@@ -9,7 +9,10 @@ const EquipmentSchema = z.strictObject({
     lon: z.number(),
   }),
   status: z.enum(['operational', 'maintenance', 'fault', 'decommissioned']),
-  installedAt: z.iso.datetime(),
+  installedAt: z.iso.datetime().refine(
+  (d) => new Date(d) <= new Date(),
+  { message: 'installedAt не может быть в будущем' }
+)
 });
 
 const createEquipmentSchema = EquipmentSchema;
