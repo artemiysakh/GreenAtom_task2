@@ -1,0 +1,24 @@
+version: '3.9'
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: task2-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-task2}
+      POSTGRES_USER: ${DB_USER:-task2}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-task2pass}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-task2} -d ${DB_NAME:-task2}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  pgdata:

@@ -1,20 +1,11 @@
-﻿# Dependencies
-node_modules/
-
-# Environment
+﻿node_modules/
 .env
-
-# Logs
-*.log
-npm-debug.log*
-
-# OS
-.DS_Store
-Thumbs.db
-
-# IDE
+data/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+coverage/
 .vscode/
 .idea/
-
-# Test coverage
-coverage/
+*.log
