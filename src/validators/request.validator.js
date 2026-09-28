@@ -32,6 +32,21 @@ const listRequestsQuerySchema = z.strictObject({
 const idParamSchema = z.strictObject({
   id: z.uuid(),
 });
+const assignSchema = z.strictObject({
+  assignees: z.array(
+    z.strictObject({
+      technicianId: z.uuid(),
+      role: z.enum(['lead', 'member']),
+      hours: z.number().nonnegative(),
+    })
+  ).min(1),
+});
+
+const assigneeIdParamSchema = z.strictObject({
+  id: z.uuid(),
+  userId: z.uuid(),
+});
 module.exports = {
-  createRequestSchema,updateRequestSchema,changeStatusSchema,listRequestsQuerySchema,idParamSchema
+  createRequestSchema,updateRequestSchema,changeStatusSchema,listRequestsQuerySchema,idParamSchema, assignSchema,
+  assigneeIdParamSchema,
 }
