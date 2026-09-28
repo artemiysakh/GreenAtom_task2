@@ -1,80 +1,96 @@
-const { randomUUID } = require('node:crypto')
+const { Op } = require('sequelize');
+const { MaintenanceRequest, Equipment, Technician } = require('../models');
+const ALLOWED_SORT = ['createdAt', 'updatedAt', 'plannedAt', 'priority', 'status'];
+const ALLOWED_ORDER = ['ASC', 'DESC'];
 
-const items = new Map();
+function normalizeSort(sort = {}) {
+  const field = ALLOWED_SORT.includes(sort.field) ? sort.field : 'createdAt';
+  const dir = ALLOWED_ORDER.includes(String(sort.order).toUpperCase())
+    ? String(sort.order).toUpperCase()
+    : 'DESC';
+  return [field, dir];
+}
 
-function findAll({ filter = {}, sort = { field: 'createdAt', order: 'desc' }, page = 1, limit = 20 } = {}) {
-  let data = [...items.values()].filter((item) => {
-    if (filter.equipmentId && item.equipmentId !== filter.equipmentId) return false;
-    if (filter.status && item.status !== filter.status) return false;
-    if (filter.priority && item.priority !== filter.priority) return false;
-    return true;
+async function findAll({ filter = {}, sort = { field: 'createdAt', order: 'desc' }, page = 1, limit = 20 } = {}) {
+  const where = {};
+  if (filter.equipmentId) where.equipmentId = filter.equipmentId;
+  if (filter.status) where.status = filter.status;
+  if (filter.priority) where.priority = filter.priority;
+
+  if (filter.plannedFrom || filter.plannedTo) {
+    where.plannedAt = {};
+    if (filter.plannedFrom) where.plannedAt[Op.gte] = new Date(filter.plannedFrom);
+    if (filter.plannedTo) where.plannedAt[Op.lte] = new Date(filter.plannedTo);
+  }
+
+  const { count, rows } = await MaintenanceRequest.findAndCountAll({
+    where,
+    include: [
+      { model: Equipment, as: 'equipment', attributes: ['id', 'name', 'serialNumber'] },
+      {
+        model: Technician,
+        as: 'technicians',
+        attributes: ['id', 'fullName', 'specialization'],
+        through: { attributes: ['role', 'hours'] },
+      },
+    ],
+    order: [normalizeSort(sort)],
+    limit,
+    offset: (page - 1) * limit,
+    distinct: true,
   });
 
-  const dir = sort.order === 'desc' ? -1 : 1;
-  data.sort((a, b) => (a[sort.field] > b[sort.field] ? dir : -dir));
-
-  const total = data.length;
-  const offset = (page - 1) * limit;
-
-  return { items: data.slice(offset, offset + limit), total, page, limit };
+  return { items: rows, total: count, page, limit };
 }
 
-function findById(id) {
-  return items.get(id) ?? null;
+
+async function findById(id) {
+  return MaintenanceRequest.findByPk(id, {
+    include: [
+      { model: Equipment, as: 'equipment' },
+      {
+        model: Technician,
+        as: 'technicians',
+        through: { attributes: ['role', 'hours'] },
+      },
+    ],
+  });
 }
 
-function findByEquipmentId(equipmentId) {
-  return [...items.values()].filter((r) => r.equipmentId === equipmentId);
+async function findByEquipmentId(equipmentId) {
+  return MaintenanceRequest.findAll({ where: { equipmentId } });
 }
 
-function findOpenByEquipmentId(equipmentId) {
-  return [...items.values()].filter(
-    (r) => r.equipmentId === equipmentId && r.status !== 'done' && r.status !== 'rejected'
-  );
+async function findOpenByEquipmentId(equipmentId) {
+  return MaintenanceRequest.findAll({
+    where: {
+      equipmentId,
+      status: { [Op.notIn]: ['done', 'rejected'] },
+    },
+  });
 }
 
-function create(data) {
-  const id = randomUUID();
-  const now = new Date().toISOString();
-
-  const record = {
-    id,
-    equipmentId: data.equipmentId,
-    title: data.title,
-    description: data.description ?? '',
-    priority: data.priority,
-    status: data.status ?? 'new',
-    plannedAt: data.plannedAt ?? null,
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  items.set(id, record);
-  return record;
+async function create(data) {
+  return MaintenanceRequest.create(data);
 }
 
-function update(id, patch) {
-  const current = items.get(id);
-  if (!current) return null;
-
-  const updated = { ...current, ...patch, id, createdAt: current.createdAt, status: current.status, updatedAt: new Date().toISOString() };
-  items.set(id, updated);
-  return updated;
+async function update(id, patch) {
+  const req = await MaintenanceRequest.findByPk(id);
+  if (!req) return null;
+  return req.update(patch);
 }
 
-function updateStatus(id, status) {
-  const current = items.get(id);
-  if (!current) return null;
-
-  const updated = { ...current, status, updatedAt: new Date().toISOString() };
-  items.set(id, updated);
-  return updated;
+async function updateStatus(id, status, options = {}) {
+  const req = await MaintenanceRequest.findByPk(id, options);
+  if (!req) return null;
+  return req.update({ status }, options);
 }
 
-function remove(id) {
-  return items.delete(id);
+async function remove(id) {
+  const req = await MaintenanceRequest.findByPk(id);
+  if (!req) return false;
+  await req.destroy();
+  return true;
 }
-module.exports = {
-  remove, updateStatus, update, create, findOpenByEquipmentId,
-  findByEquipmentId, findAll,findById
-}
+
+module.exports = { findAll, findById, findByEquipmentId, findOpenByEquipmentId, create, update, updateStatus, remove };
